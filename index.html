@@ -9,13 +9,13 @@
     --ts: 1;            /* 시간 배율 (1 / 재생 속도) — CSS 트랜지션에 곱해 씀 */
     --scale: 1;         /* 폰 프레임 화면 맞춤 배율 */
     --blue: #3182f6;
-    --teal: #1fc7a6;
-    --screen: #121216;
-    --text: #ffffff;
-    --text-2: #d1d6db;
+    --teal: #12b394;
+    --screen: #ffffff;
+    --text: #191f28;
+    --text-2: #333d4b;
     --sub: #8b95a1;
-    --sub-2: #4e5968;
-    --line: rgba(255, 255, 255, .08);
+    --sub-2: #b0b8c1;
+    --line: #e5e8eb;
     --font: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Pretendard", "Noto Sans KR", "Segoe UI", sans-serif;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -59,7 +59,7 @@
   }
   .screen { position: absolute; inset: 0; border-radius: 56px; overflow: hidden; background: var(--screen); color: var(--text); }
   .island { position: absolute; top: 11px; left: 50%; width: 124px; height: 36px; margin-left: -62px; border-radius: 20px; background: #000; z-index: 50; }
-  .home-ind { position: absolute; bottom: 8px; left: 50%; width: 134px; height: 5px; margin-left: -67px; border-radius: 3px; background: rgba(255,255,255,.55); z-index: 50; }
+  .home-ind { position: absolute; bottom: 8px; left: 50%; width: 134px; height: 5px; margin-left: -67px; border-radius: 3px; background: #191f28; z-index: 50; }
   .statusbar {
     position: absolute; top: 0; left: 0; right: 0; height: 54px; padding: 0 34px 0 44px; z-index: 40;
     display: flex; align-items: center; justify-content: space-between; font-size: 16px; font-weight: 600;
@@ -67,9 +67,9 @@
   }
   .sb-icons { display: flex; align-items: center; gap: 6px; }
   .sb-bars { display: flex; align-items: flex-end; gap: 2px; height: 11px; }
-  .sb-bars i { width: 3px; background: #fff; border-radius: 1px; }
-  .sb-batt { width: 25px; height: 12px; border: 1.5px solid rgba(255,255,255,.5); border-radius: 4px; padding: 1.5px; }
-  .sb-batt i { display: block; height: 100%; width: 80%; background: #fff; border-radius: 1.5px; }
+  .sb-bars i { width: 3px; background: #191f28; border-radius: 1px; }
+  .sb-batt { width: 25px; height: 12px; border: 1.5px solid rgba(25,31,40,.4); border-radius: 4px; padding: 1.5px; }
+  .sb-batt i { display: block; height: 100%; width: 80%; background: #191f28; border-radius: 1.5px; }
   .phone:not([data-state="idle"]):not([data-state="ended"]) .statusbar { opacity: 0; }
 
   /* ───────── 빛 (Glow) — 나중에 효과만 교체 ───────── */
@@ -79,8 +79,8 @@
     transition: opacity calc(450ms * var(--ts)) ease;
   }
   .glow.on { opacity: 1; }
-  .glow-me { bottom: 0; background: radial-gradient(130% 75% at 50% 100%, rgba(49,130,246,.55) 0%, rgba(49,130,246,.16) 45%, rgba(49,130,246,0) 75%); }
-  .glow-partner { top: 0; background: radial-gradient(130% 75% at 50% 0%, rgba(31,199,166,.48) 0%, rgba(31,199,166,.14) 45%, rgba(31,199,166,0) 75%); }
+  .glow-me { bottom: 0; background: radial-gradient(130% 75% at 50% 100%, rgba(49,130,246,.32) 0%, rgba(49,130,246,.10) 45%, rgba(49,130,246,0) 75%); }
+  .glow-partner { top: 0; background: radial-gradient(130% 75% at 50% 0%, rgba(31,199,166,.32) 0%, rgba(31,199,166,.10) 45%, rgba(31,199,166,0) 75%); }
 
   section { position: absolute; inset: 0; z-index: 2; display: none; }
 
@@ -90,16 +90,16 @@
   .appbar { height: 44px; display: flex; align-items: center; font-size: 17px; font-weight: 600; color: var(--text-2); padding: 0 4px; }
   .idle-body { flex: 1; display: flex; flex-direction: column; justify-content: center; padding: 0 4px 40px; }
   .illu {
-    width: 92px; height: 150px; border-radius: 22px; border: 2px solid #3a3f47; margin-bottom: 36px;
+    width: 92px; height: 150px; border-radius: 22px; border: 2px solid #d1d6db; margin-bottom: 36px;
     position: relative; display: flex; flex-direction: column; overflow: hidden;
   }
   .illu span { flex: 1; display: flex; align-items: center; justify-content: center; font-size: 17px; font-weight: 700; }
-  .illu span:first-child { transform: rotate(180deg); color: var(--teal); border-top: 1px solid #3a3f47; }
-  .illu span:last-child { color: #fff; }
+  .illu span:first-child { transform: rotate(180deg); color: var(--teal); border-top: 1px solid #d1d6db; }
+  .illu span:last-child { color: var(--text); }
   .idle h1 { font-size: 28px; line-height: 1.36; font-weight: 700; letter-spacing: -.02em; }
   .idle p { margin-top: 12px; font-size: 16px; line-height: 1.55; color: var(--sub); }
   .langs { display: flex; align-items: center; gap: 10px; margin-top: 32px; }
-  .lang { padding: 11px 16px; border-radius: 12px; background: #202027; font-size: 15px; font-weight: 600; }
+  .lang { padding: 11px 16px; border-radius: 12px; background: #f2f4f6; font-size: 15px; font-weight: 600; }
   .swap { color: var(--sub); font-size: 18px; }
   .cta {
     height: 56px; border-radius: 16px; background: var(--blue); color: #fff;
@@ -162,11 +162,11 @@
   .foot { display: flex; justify-content: center; padding: 10px 0 6px; }
   .end-btn {
     height: 44px; padding: 0 20px; border-radius: 22px;
-    background: rgba(255,255,255,.08); color: var(--text-2); font-size: 15px; font-weight: 600;
+    background: #f2f4f6; color: var(--text-2); font-size: 15px; font-weight: 600;
     display: flex; align-items: center; gap: 8px;
     transition: opacity calc(300ms * var(--ts)), background .15s;
   }
-  .end-btn:hover { background: rgba(255,255,255,.13); }
+  .end-btn:hover { background: #e5e8eb; }
   .end-btn i { width: 10px; height: 10px; border-radius: 2px; background: #f04452; }
   .phone:not([data-state="conversation"]) .end-btn { opacity: 0; pointer-events: none; }
 
@@ -190,22 +190,22 @@
   .ended { flex-direction: column; padding: 54px 20px 42px; }
   .ended-head { padding: 28px 4px 22px; }
   .ended-head .check {
-    width: 48px; height: 48px; border-radius: 24px; background: rgba(49,130,246,.18); color: var(--blue);
+    width: 48px; height: 48px; border-radius: 24px; background: #e8f3ff; color: var(--blue);
     display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 700; margin-bottom: 18px;
   }
   .ended-head h2 { font-size: 26px; font-weight: 700; letter-spacing: -.02em; }
   .ended-head p { margin-top: 8px; font-size: 15px; color: var(--sub); }
   .stats { display: flex; gap: 8px; margin-bottom: 18px; }
-  .stat { flex: 1; padding: 14px 16px; border-radius: 16px; background: #1c1c22; }
+  .stat { flex: 1; padding: 14px 16px; border-radius: 16px; background: #f2f4f6; }
   .stat b { display: block; font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
   .stat span { font-size: 13px; color: var(--sub); }
   .ended-list { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding-bottom: 16px; scrollbar-width: none; }
   .ended-list::-webkit-scrollbar { display: none; }
-  .msg { max-width: 86%; padding: 12px 15px 13px; border-radius: 18px; background: #202027; align-self: flex-start; }
-  .msg.me { align-self: flex-end; background: rgba(49,130,246,.2); }
+  .msg { max-width: 86%; padding: 12px 15px 13px; border-radius: 18px; background: #f2f4f6; align-self: flex-start; }
+  .msg.me { align-self: flex-end; background: #e8f3ff; }
   .msg .who { font-size: 12px; font-weight: 600; color: var(--sub); margin-bottom: 5px; }
-  .msg.partner .who { color: var(--teal); }
-  .msg.me .who { color: #7fb1ff; }
+  .msg.partner .who { color: #0ea88a; }
+  .msg.me .who { color: var(--blue); }
   .msg .src { font-size: 16px; line-height: 1.45; font-weight: 600; }
   .msg .dst { margin-top: 4px; font-size: 14px; line-height: 1.45; color: var(--sub); }
   .ended .cta { margin-top: 12px; flex: none; }
