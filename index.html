@@ -81,12 +81,17 @@
     transition: opacity calc(450ms * var(--ts)) ease;
   }
   .glow.on { opacity: 1; }
+  /* --amp(0~1): 음성 크기 엔벨로프 — JS가 매 프레임 갱신 */
+  .glow { --amp: 0; transform: scaleY(calc(.62 + .58 * var(--amp))); }
+  .glow-me, .glow-me::before, .glow-me::after { transform-origin: 50% 100%; }
+  .glow-partner, .glow-partner::before, .glow-partner::after { transform-origin: 50% 0%; }
   .glow::before, .glow::after {
     content: ''; position: absolute; left: -25%; right: -25%; height: 100%;
     filter: blur(18px);
   }
-  .glow::before { animation: glow-drift-a calc(5.5s * var(--ts)) ease-in-out infinite alternate; }
-  .glow::after  { animation: glow-drift-b calc(4.2s * var(--ts)) ease-in-out infinite alternate; mix-blend-mode: multiply; opacity: .85; }
+  .glow::before { animation: glow-drift-a calc(5.5s * var(--ts)) ease-in-out infinite alternate; opacity: calc(.55 + .45 * var(--amp)); }
+  .glow::after  { animation: glow-drift-b calc(4.2s * var(--ts)) ease-in-out infinite alternate; mix-blend-mode: multiply;
+    opacity: calc(.35 + .65 * var(--amp)); scale: 1 calc(.7 + .6 * var(--amp)); translate: calc(var(--sway, 0) * 22px) 0; }
   @keyframes glow-drift-a { from { transform: translateX(-7%) scale(1); } to { transform: translateX(7%) scale(1.08); } }
   @keyframes glow-drift-b { from { transform: translateX(8%) scaleY(.92); } to { transform: translateX(-8%) scaleY(1.06); } }
 
@@ -165,7 +170,7 @@
   .phone:not([data-state="conversation"]) .half .live,
   .phone:not([data-state="conversation"]) .half .history { opacity: 0; }
   .label { display: flex; align-items: center; gap: 6px; height: 20px; margin-bottom: 14px; font-size: 13px; font-weight: 600; color: var(--sub); }
-  .label .dot { width: 6px; height: 6px; border-radius: 3px; background: var(--sub-2); transition: background calc(200ms * var(--ts)); }
+  .label .dot { width: 6px; height: 6px; border-radius: 3px; background: var(--sub-2); transition: background calc(200ms * var(--ts)); transform: scale(calc(1 + var(--amp, 0) * 1.1)); }
   .label .status { margin-left: auto; color: var(--sub-2); }
   .half-me.speaking .label .dot { background: var(--grad-me); }
   .half-partner.speaking .label .dot { background: var(--grad-partner); }
@@ -384,10 +389,52 @@
     if (!paused) {
       vt += dt * speed;
       while (queue.length && queue[0].t <= vt) queue.shift().fn();
+      updateVoice(dt * speed);
     }
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
+
+  /* ───────── 음성 엔벨로프 → 빛 일렁임 ─────────
+     단어가 들어올 때 그 단어 길이(ms) 안에 음절 수만큼 펄스를 심고,
+     매 프레임 펄스를 합쳐 --amp(0~1)를 만든다. 가상 시계 기준이라
+     일시정지·배속을 그대로 따른다. */
+  const voice = { me: { pulses: [], amp: 0, sway: 0 }, partner: { pulses: [], amp: 0, sway: 0 } };
+  function syllables(w) {
+    const ko = (w.match(/[\uac00-\ud7a3]/g) || []).length;
+    return Math.min(4, ko || Math.max(1, (w.match(/[aeiouy]+/gi) || []).length));
+  }
+  function voiceWord(who, word, dur) {
+    const n = syllables(word), step = (dur * .9) / n;
+    for (let k = 0; k < n; k++) {
+      voice[who].pulses.push({
+        t: vt + k * step, len: step,
+        peak: (k === 0 ? .8 : .5) + Math.random() * .25 + (/[?!.,]$/.test(word) && k === n - 1 ? .1 : 0),
+        dir: Math.random() * 2 - 1,
+      });
+    }
+  }
+  function updateVoice(vdt) {
+    for (const who of ['me', 'partner']) {
+      const v = voice[who];
+      let target = 0, sway = 0;
+      v.pulses = v.pulses.filter((p) => vt - p.t < 1200);
+      for (const p of v.pulses) {
+        const d = vt - p.t;
+        if (d < 0) continue;
+        const e = d < 45 ? d / 45 : Math.exp(-(d - 45) / (p.len * .4));
+        const a = p.peak * e;
+        if (a > target) { target = a; sway = p.dir * e; }
+      }
+      const k = 1 - Math.exp(-vdt / (target > v.amp ? 25 : 70)); // 빠른 어택, 느린 릴리즈
+      v.amp += (target - v.amp) * k;
+      v.sway += (sway - v.sway) * (1 - Math.exp(-vdt / 140));
+      const a = Math.min(1, v.amp).toFixed(3);
+      glow[who].style.setProperty('--amp', a);
+      glow[who].style.setProperty('--sway', v.sway.toFixed(3));
+      H[who].el.style.setProperty('--amp', a);
+    }
+  }
 
   const isCss = (a) =>
     (typeof CSSTransition !== 'undefined' && a instanceof CSSTransition) ||
@@ -582,6 +629,7 @@
     });
     srcW.forEach((w, i) => at(st[i], () => {
       addWord(H[u.who], srcLine, w);
+      voiceWord(u.who, w, i < st.length - 1 ? st[i + 1] - st[i] : 320);
       rec.src.push(w);
       if (i >= 2) confirm(srcLine, i - 2);
     }));
@@ -639,6 +687,7 @@
     $('#ended-list').innerHTML = '';
     transcript = [];
     vt = 0;
+    for (const who of ['me', 'partner']) { voice[who].pulses = []; voice[who].amp = 0; voice[who].sway = 0; }
     setPaused(false);
     setState('idle'); setScreen('idle');
   }
