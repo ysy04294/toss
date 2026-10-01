@@ -1,0 +1,628 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>마주보고 통역 프로토타입</title>
+<style>
+  :root {
+    --ts: 1;            /* 시간 배율 (1 / 재생 속도) — CSS 트랜지션에 곱해 씀 */
+    --scale: 1;         /* 폰 프레임 화면 맞춤 배율 */
+    --blue: #3182f6;
+    --teal: #1fc7a6;
+    --screen: #121216;
+    --text: #ffffff;
+    --text-2: #d1d6db;
+    --sub: #8b95a1;
+    --sub-2: #4e5968;
+    --line: rgba(255, 255, 255, .08);
+    --font: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Pretendard", "Noto Sans KR", "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: #e8eaed;
+    font-family: var(--font);
+    -webkit-font-smoothing: antialiased;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 18px; overflow: hidden;
+  }
+  button { font: inherit; cursor: pointer; border: 0; background: none; color: inherit; }
+
+  /* ───────── 화면 밖 컨트롤 ───────── */
+  .controls {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center;
+    font-size: 13px; color: #333d4b;
+  }
+  .controls button {
+    height: 32px; padding: 0 12px; border-radius: 8px;
+    background: #fff; color: #333d4b; font-weight: 600;
+    box-shadow: 0 0 0 1px rgba(0,0,0,.08);
+  }
+  .controls button:hover { background: #f4f5f7; }
+  .controls button.on { background: #333d4b; color: #fff; box-shadow: none; }
+  .seg { display: flex; gap: 2px; padding: 2px; background: #fff; border-radius: 10px; box-shadow: 0 0 0 1px rgba(0,0,0,.08); }
+  .seg button { box-shadow: none; height: 28px; border-radius: 8px; }
+  .ind { display: flex; align-items: center; gap: 8px; margin-left: 6px; font-variant-numeric: tabular-nums; color: #4e5968; font-weight: 600; min-width: 170px; }
+  .ind .dots { display: flex; gap: 4px; }
+  .ind .dots i { width: 6px; height: 6px; border-radius: 3px; background: #c9cfd6; transition: background .2s, width .2s; }
+  .ind .dots i.on { background: var(--blue); }
+  .ind .dots i.cur { width: 16px; }
+
+  /* ───────── 폰 프레임 ───────── */
+  .phone-wrap { width: calc(393px * var(--scale)); height: calc(852px * var(--scale)); position: relative; }
+  .phone {
+    position: absolute; top: 0; left: 0;
+    width: 393px; height: 852px; border-radius: 56px;
+    transform: scale(var(--scale)); transform-origin: 0 0;
+    box-shadow: 0 0 0 11px #1a1a1e, 0 0 0 12px #3b3b42, 0 40px 90px rgba(0,0,0,.35);
+  }
+  .screen { position: absolute; inset: 0; border-radius: 56px; overflow: hidden; background: var(--screen); color: var(--text); }
+  .island { position: absolute; top: 11px; left: 50%; width: 124px; height: 36px; margin-left: -62px; border-radius: 20px; background: #000; z-index: 50; }
+  .home-ind { position: absolute; bottom: 8px; left: 50%; width: 134px; height: 5px; margin-left: -67px; border-radius: 3px; background: rgba(255,255,255,.55); z-index: 50; }
+  .statusbar {
+    position: absolute; top: 0; left: 0; right: 0; height: 54px; padding: 0 34px 0 44px; z-index: 40;
+    display: flex; align-items: center; justify-content: space-between; font-size: 16px; font-weight: 600;
+    transition: opacity calc(300ms * var(--ts));
+  }
+  .sb-icons { display: flex; align-items: center; gap: 6px; }
+  .sb-bars { display: flex; align-items: flex-end; gap: 2px; height: 11px; }
+  .sb-bars i { width: 3px; background: #fff; border-radius: 1px; }
+  .sb-batt { width: 25px; height: 12px; border: 1.5px solid rgba(255,255,255,.5); border-radius: 4px; padding: 1.5px; }
+  .sb-batt i { display: block; height: 100%; width: 80%; background: #fff; border-radius: 1.5px; }
+  .phone:not([data-state="idle"]):not([data-state="ended"]) .statusbar { opacity: 0; }
+
+  /* ───────── 빛 (Glow) — 나중에 효과만 교체 ───────── */
+  .glow {
+    position: absolute; left: 0; right: 0; height: 48%;
+    pointer-events: none; opacity: 0; z-index: 1;
+    transition: opacity calc(450ms * var(--ts)) ease;
+  }
+  .glow.on { opacity: 1; }
+  .glow-me { bottom: 0; background: radial-gradient(130% 75% at 50% 100%, rgba(49,130,246,.55) 0%, rgba(49,130,246,.16) 45%, rgba(49,130,246,0) 75%); }
+  .glow-partner { top: 0; background: radial-gradient(130% 75% at 50% 0%, rgba(31,199,166,.48) 0%, rgba(31,199,166,.14) 45%, rgba(31,199,166,0) 75%); }
+
+  section { position: absolute; inset: 0; z-index: 2; display: none; }
+
+  /* ───────── 1. idle ───────── */
+  .phone[data-state="idle"] .idle, .phone[data-state="placing"] .idle { display: flex; }
+  .idle { flex-direction: column; padding: 54px 20px 42px; }
+  .appbar { height: 44px; display: flex; align-items: center; font-size: 17px; font-weight: 600; color: var(--text-2); padding: 0 4px; }
+  .idle-body { flex: 1; display: flex; flex-direction: column; justify-content: center; padding: 0 4px 40px; }
+  .illu {
+    width: 92px; height: 150px; border-radius: 22px; border: 2px solid #3a3f47; margin-bottom: 36px;
+    position: relative; display: flex; flex-direction: column; overflow: hidden;
+  }
+  .illu span { flex: 1; display: flex; align-items: center; justify-content: center; font-size: 17px; font-weight: 700; }
+  .illu span:first-child { transform: rotate(180deg); color: var(--teal); border-top: 1px solid #3a3f47; }
+  .illu span:last-child { color: #fff; }
+  .idle h1 { font-size: 28px; line-height: 1.36; font-weight: 700; letter-spacing: -.02em; }
+  .idle p { margin-top: 12px; font-size: 16px; line-height: 1.55; color: var(--sub); }
+  .langs { display: flex; align-items: center; gap: 10px; margin-top: 32px; }
+  .lang { padding: 11px 16px; border-radius: 12px; background: #202027; font-size: 15px; font-weight: 600; }
+  .swap { color: var(--sub); font-size: 18px; }
+  .cta {
+    height: 56px; border-radius: 16px; background: var(--blue); color: #fff;
+    font-size: 17px; font-weight: 600; width: 100%; transition: transform .1s, filter .15s;
+  }
+  .cta:hover { filter: brightness(1.06); }
+  .cta:active { transform: scale(.98); }
+
+  /* ───────── 2~6. split (placing / greeting / conversation) ───────── */
+  .phone[data-state="placing"] .split,
+  .phone[data-state="greeting"] .split,
+  .phone[data-state="conversation"] .split { display: block; }
+  .divider { position: absolute; left: 24px; right: 24px; top: 50%; height: 1px; background: var(--line); }
+  .half {
+    position: absolute; left: 0; right: 0; height: 50%;
+    display: flex; flex-direction: column; padding: 20px 24px 0;
+  }
+  /* 회전된 위 절반: 로컬 아래쪽 = 실제 화면 위쪽(다이내믹 아일랜드) */
+  .half-partner { top: 0; padding-bottom: 64px; }
+  .half-me { top: 50%; padding-bottom: 28px; }
+  .phone[data-state="greeting"] .half-partner,
+  .phone[data-state="conversation"] .half-partner { transform: rotate(180deg); }
+
+  /* 로컬 위쪽 = 화면 중앙선, 로컬 아래쪽 = 읽는 사람 쪽 가장자리 */
+  .label, .live, .history { transition: opacity calc(300ms * var(--ts)); }
+  .phone:not([data-state="conversation"]) .half .label,
+  .phone:not([data-state="conversation"]) .half .live,
+  .phone:not([data-state="conversation"]) .half .history { opacity: 0; }
+  .label { display: flex; align-items: center; gap: 6px; height: 20px; margin-bottom: 14px; font-size: 13px; font-weight: 600; color: var(--sub); }
+  .label .dot { width: 6px; height: 6px; border-radius: 3px; background: var(--sub-2); transition: background calc(200ms * var(--ts)); }
+  .label .status { margin-left: auto; color: var(--sub-2); }
+  .half-me.speaking .label .dot { background: var(--blue); }
+  .half-partner.speaking .label .dot { background: var(--teal); }
+  .half.speaking .label .status { color: var(--text-2); }
+
+  .live { display: flex; flex-direction: column; gap: 10px; min-height: 80px; margin-bottom: 20px; }
+  .history {
+    flex: 1; min-height: 0; overflow: hidden;
+    display: flex; flex-direction: column; gap: 14px;
+    -webkit-mask-image: linear-gradient(to bottom, #000 55%, transparent 100%);
+            mask-image: linear-gradient(to bottom, #000 55%, transparent 100%);
+  }
+  .phone[data-state="conversation"] .half:not(.has-content) .live:empty::before {
+    content: attr(data-hint); font-size: 20px; line-height: 1.38; font-weight: 600; color: var(--sub-2); letter-spacing: -.02em;
+  }
+
+  .line {
+    font-size: 20px; line-height: 1.38; font-weight: 600; letter-spacing: -.02em;
+    color: var(--text-2); word-break: keep-all; overflow-wrap: anywhere;
+  }
+  .line.live-line { font-size: 28px; color: var(--text); }
+  .line.self { color: var(--sub); text-align: right; }
+
+  /* 단어: 확정 전 40%, 확정 후 100% — 굵기는 절대 바꾸지 않음 */
+  .w { transition: opacity calc(220ms * var(--ts)) ease; }
+  .w.tent { opacity: .4; }
+  .w.new { animation: w-in calc(160ms * var(--ts)) ease-out; }
+  @keyframes w-in { from { opacity: 0; } }
+
+  .foot { display: flex; justify-content: center; padding: 10px 0 6px; }
+  .end-btn {
+    height: 44px; padding: 0 20px; border-radius: 22px;
+    background: rgba(255,255,255,.08); color: var(--text-2); font-size: 15px; font-weight: 600;
+    display: flex; align-items: center; gap: 8px;
+    transition: opacity calc(300ms * var(--ts)), background .15s;
+  }
+  .end-btn:hover { background: rgba(255,255,255,.13); }
+  .end-btn i { width: 10px; height: 10px; border-radius: 2px; background: #f04452; }
+  .phone:not([data-state="conversation"]) .end-btn { opacity: 0; pointer-events: none; }
+
+  .notice {
+    position: absolute; inset: 0; padding: 24px 28px 64px;
+    display: flex; flex-direction: column; justify-content: center; gap: 10px; pointer-events: none;
+  }
+  .half-me .notice { padding: 24px 28px 40px; }
+  .n-eyebrow { font-size: 13px; font-weight: 600; color: var(--sub); }
+  .n-big { font-size: 28px; line-height: 1.36; font-weight: 600; letter-spacing: -.02em; }
+  .n-mid { font-size: 20px; line-height: 1.4; font-weight: 600; letter-spacing: -.02em; color: var(--text-2); }
+  .n-sub { font-size: 15px; line-height: 1.5; color: var(--sub); }
+  .loader { display: flex; gap: 6px; margin-bottom: 6px; }
+  .loader i { width: 8px; height: 8px; border-radius: 4px; background: var(--blue); animation: bounce calc(900ms * var(--ts)) infinite ease-in-out; }
+  .loader i:nth-child(2) { animation-delay: calc(150ms * var(--ts)); }
+  .loader i:nth-child(3) { animation-delay: calc(300ms * var(--ts)); }
+  @keyframes bounce { 0%, 80%, 100% { opacity: .25; transform: none; } 40% { opacity: 1; transform: translateY(-4px); } }
+
+  /* ───────── 7. ended ───────── */
+  .phone[data-state="ended"] .ended { display: flex; }
+  .ended { flex-direction: column; padding: 54px 20px 42px; }
+  .ended-head { padding: 28px 4px 22px; }
+  .ended-head .check {
+    width: 48px; height: 48px; border-radius: 24px; background: rgba(49,130,246,.18); color: var(--blue);
+    display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 700; margin-bottom: 18px;
+  }
+  .ended-head h2 { font-size: 26px; font-weight: 700; letter-spacing: -.02em; }
+  .ended-head p { margin-top: 8px; font-size: 15px; color: var(--sub); }
+  .stats { display: flex; gap: 8px; margin-bottom: 18px; }
+  .stat { flex: 1; padding: 14px 16px; border-radius: 16px; background: #1c1c22; }
+  .stat b { display: block; font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .stat span { font-size: 13px; color: var(--sub); }
+  .ended-list { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding-bottom: 16px; scrollbar-width: none; }
+  .ended-list::-webkit-scrollbar { display: none; }
+  .msg { max-width: 86%; padding: 12px 15px 13px; border-radius: 18px; background: #202027; align-self: flex-start; }
+  .msg.me { align-self: flex-end; background: rgba(49,130,246,.2); }
+  .msg .who { font-size: 12px; font-weight: 600; color: var(--sub); margin-bottom: 5px; }
+  .msg.partner .who { color: var(--teal); }
+  .msg.me .who { color: #7fb1ff; }
+  .msg .src { font-size: 16px; line-height: 1.45; font-weight: 600; }
+  .msg .dst { margin-top: 4px; font-size: 14px; line-height: 1.45; color: var(--sub); }
+  .ended .cta { margin-top: 12px; flex: none; }
+  .empty { color: var(--sub); font-size: 15px; padding: 8px 4px; }
+</style>
+</head>
+<body>
+
+<div class="controls">
+  <button id="btn-restart">처음부터</button>
+  <button id="btn-pause">일시정지</button>
+  <div class="seg">
+    <button data-speed="0.5">0.5x</button>
+    <button data-speed="1" class="on">1x</button>
+  </div>
+  <div class="ind"><span class="dots"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span id="ind-label">1/7 · 대기</span></div>
+</div>
+
+<div class="phone-wrap">
+  <div class="phone" id="phone" data-state="idle">
+    <div class="screen">
+      <div class="statusbar">
+        <span>9:41</span>
+        <span class="sb-icons">
+          <span class="sb-bars"><i style="height:4px"></i><i style="height:6px"></i><i style="height:8px"></i><i style="height:11px"></i></span>
+          <span class="sb-batt"><i></i></span>
+        </span>
+      </div>
+      <div class="island"></div>
+
+      <div class="glow glow-partner"></div>
+      <div class="glow glow-me"></div>
+
+      <!-- 1. idle -->
+      <section class="idle" id="idle">
+        <div class="appbar">대화 통역</div>
+        <div class="idle-body">
+          <div class="illu"><span>Hi</span><span>안녕</span></div>
+          <h1>마주 보고<br>대화해 보세요</h1>
+          <p>휴대폰을 두 사람 사이에 놓으면<br>위쪽은 상대방, 아래쪽은 나를 향해요.</p>
+          <div class="langs"><span class="lang">한국어</span><span class="swap">⇄</span><span class="lang">English</span></div>
+        </div>
+        <button class="cta" id="btn-start">듣기 시작</button>
+      </section>
+
+      <!-- 2~6. split -->
+      <section class="split" id="split">
+        <div class="half half-partner" id="half-partner">
+          <div class="label"><span class="dot"></span><span>English</span><span class="status">Listening</span></div>
+          <div class="live" data-hint="Speak whenever you're ready"></div>
+          <div class="history"></div>
+          <div class="notice"></div>
+        </div>
+        <div class="divider"></div>
+        <div class="half half-me" id="half-me">
+          <div class="label"><span class="dot"></span><span>한국어</span><span class="status">듣고 있어요</span></div>
+          <div class="live" data-hint="편하게 말씀하세요"></div>
+          <div class="history"></div>
+          <div class="foot"><button class="end-btn" id="btn-end"><i></i>듣기 종료</button></div>
+          <div class="notice"></div>
+        </div>
+      </section>
+
+      <!-- 7. ended -->
+      <section class="ended" id="ended">
+        <div class="ended-head">
+          <div class="check">✓</div>
+          <h2>대화가 끝났어요</h2>
+          <p>나눈 대화를 원문과 번역으로 정리했어요.</p>
+        </div>
+        <div class="stats">
+          <div class="stat"><b id="st-time">0:00</b><span>대화 시간</span></div>
+          <div class="stat"><b id="st-me">0</b><span>내 문장</span></div>
+          <div class="stat"><b id="st-partner">0</b><span>상대 문장</span></div>
+        </div>
+        <div class="ended-list" id="ended-list"></div>
+        <button class="cta" id="btn-again">처음으로</button>
+      </section>
+
+      <div class="home-ind"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  /* ───────── 대본 ─────────
+     gap: 이전 발화가 정착(settle)된 뒤 쉬는 시간(ms)
+     overlap: 직전 발화 시작 후 몇 ms 뒤에 겹쳐 시작할지 (동시 발화) */
+  const SCRIPT = [
+    { who: 'me', screen: 'me', gap: 700,
+      src: '안녕하세요, 혹시 이 근처에 지하철역이 있을까요?',
+      dst: 'Hi, is there a subway station near here?' },
+    { who: 'partner', screen: 'partner', gap: 500,
+      src: "Yes, there's one about five minutes from here.",
+      dst: '네, 여기서 5분 정도 거리에 하나 있어요.' },
+    { who: 'me', screen: 'both', gap: 500,
+      src: '걸어서 갈 수 있는 거리인가요?',
+      dst: 'Is it within walking distance?' },
+    { who: 'partner', screen: 'both', overlap: 650,
+      src: 'Sure, just go straight and turn left at the bank.',
+      dst: '네, 쭉 가다가 은행에서 왼쪽으로 도세요.' },
+  ];
+
+  const T = {
+    placing: 1200, greeting: 2000,
+    wordMin: 250, wordMax: 350,
+    glowTail: 250,     // 마지막 단어 후 빛이 꺼지기까지
+    confirmTail: 350,  // 마지막 단어 후 남은 단어 확정
+    silence: 800,      // 침묵 후 정착
+    settle: 300,
+  };
+
+  const SCREENS = {
+    idle: [1, '대기'], placing: [2, '휴대폰 놓기'], greeting: [3, '인사'],
+    me: [4, '내가 말함'], partner: [5, '상대가 말함'], both: [6, '동시에 말함'], ended: [7, '대화 요약'],
+  };
+
+  const $ = (s) => document.querySelector(s);
+  const phone = $('#phone');
+  const half = (id) => {
+    const el = document.getElementById(id);
+    return { el, live: el.querySelector('.live'), history: el.querySelector('.history'), notice: el.querySelector('.notice') };
+  };
+  const H = { me: half('half-me'), partner: half('half-partner') };
+  const glow = { me: $('.glow-me'), partner: $('.glow-partner') };
+  const dots = [...document.querySelectorAll('.ind .dots i')];
+
+  /* ───────── 가상 시계: 일시정지 / 재생 속도 ───────── */
+  let speed = 1, paused = false, vt = 0, lastNow = performance.now();
+  let queue = [], seq = 0, state = 'idle', convStart = 0, transcript = [];
+
+  function at(ms, fn) {
+    queue.push({ t: vt + ms, fn, s: seq++ });
+    queue.sort((a, b) => a.t - b.t || a.s - b.s);
+  }
+  function frame(now) {
+    const dt = Math.min(now - lastNow, 100);
+    lastNow = now;
+    if (!paused) {
+      vt += dt * speed;
+      while (queue.length && queue[0].t <= vt) queue.shift().fn();
+    }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  const isCss = (a) =>
+    (typeof CSSTransition !== 'undefined' && a instanceof CSSTransition) ||
+    (typeof CSSAnimation !== 'undefined' && a instanceof CSSAnimation);
+
+  function animate(el, keyframes, opts) {
+    const a = el.animate(keyframes, opts);
+    a.playbackRate = speed;
+    if (paused) a.pause();
+    return a;
+  }
+
+  function setPaused(p) {
+    paused = p;
+    $('#btn-pause').textContent = p ? '재생' : '일시정지';
+    $('#btn-pause').classList.toggle('on', p);
+    phone.getAnimations({ subtree: true }).forEach((a) => {
+      if (p && a.playState === 'running') a.pause();
+      else if (!p && a.playState === 'paused') a.play();
+    });
+  }
+
+  function setSpeed(s) {
+    speed = s;
+    document.documentElement.style.setProperty('--ts', 1 / s);
+    phone.getAnimations({ subtree: true }).forEach((a) => { if (!isCss(a)) a.playbackRate = s; });
+    document.querySelectorAll('.seg button').forEach((b) => b.classList.toggle('on', +b.dataset.speed === s));
+  }
+
+  function mulberry32(a) {
+    return () => {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  /* ───────── 상태 ───────── */
+  function setState(s) { state = s; phone.dataset.state = s; }
+  function setScreen(key) {
+    const [n, label] = SCREENS[key];
+    $('#ind-label').textContent = `${n}/7 · ${label}`;
+    dots.forEach((d, i) => { d.classList.toggle('on', i < n); d.classList.toggle('cur', i === n - 1); });
+  }
+  function setGlow(who, on) {
+    glow[who].classList.toggle('on', on);
+    H[who].el.classList.toggle('speaking', on);
+  }
+
+  function setNotice(h, html) {
+    const n = h.notice;
+    const show = () => {
+      n.getAnimations().forEach((a) => a.cancel());
+      n.innerHTML = html;
+      if (html) animate(n, [{ opacity: 0, transform: 'translateY(8px)' }, { opacity: 1, transform: 'none' }], { duration: 320, easing: 'ease-out' });
+    };
+    if (n.innerHTML.trim()) {
+      animate(n, [{ opacity: 1 }, { opacity: 0 }], { duration: 160, fill: 'forwards' });
+      at(160, show);
+    } else show();
+  }
+
+  /* ───────── FLIP: 레이아웃 변화를 부드럽게 ─────────
+     offsetLeft/Top은 transform(회전·스케일)의 영향을 받지 않으므로
+     회전된 위 절반에서도 로컬 좌표 그대로 쓸 수 있다. */
+  function measure(h, except) {
+    return new Map([...h.el.querySelectorAll('.line')].filter((e) => e !== except).map((e) => [e, [e.offsetLeft, e.offsetTop]]));
+  }
+  function playFlip(first, dur) {
+    first.forEach(([x, y], e) => {
+      if (!e.isConnected) return;
+      const dx = x - e.offsetLeft, dy = y - e.offsetTop;
+      if (dx || dy) animate(e, [{ transform: `translate(${dx}px,${dy}px)` }, { transform: 'none' }], { duration: dur, easing: 'ease-out' });
+    });
+  }
+  function flip(h, mutate, dur = 260) {
+    const first = measure(h);
+    mutate();
+    playFlip(first, dur);
+  }
+
+  function newLine(h, cls) {
+    const p = document.createElement('p');
+    p.className = 'line live-line ' + cls;
+    flip(h, () => { h.live.append(p); h.el.classList.add('has-content'); });
+    return p;
+  }
+
+  function addWord(h, line, text) {
+    flip(h, () => {
+      if (line.childNodes.length) line.append(' ');
+      const w = document.createElement('span');
+      w.className = 'w tent new';
+      w.textContent = text;
+      w.addEventListener('animationend', () => w.classList.remove('new'), { once: true });
+      line.append(w);
+    }, 220);
+  }
+
+  function confirm(line, i) {
+    const w = line && line.querySelectorAll('.w')[i];
+    if (w) w.classList.remove('tent');
+  }
+  function confirmAll(line) {
+    if (line) line.querySelectorAll('.w.tent').forEach((w) => w.classList.remove('tent'));
+  }
+
+  // 라이브 문장 정착: 28px → 20px, 가장자리 쪽으로 한 칸 (300ms ease-out)
+  function settle(h, line) {
+    if (!line || !line.isConnected) return;
+    const others = measure(h, line);
+    const lx = line.offsetLeft, ly = line.offsetTop;
+    line.style.fontSize = '28px';              // 측정하는 동안 크기 유지
+    line.classList.remove('live-line');
+    h.history.prepend(line);
+    const dx = lx - line.offsetLeft, dy = ly - line.offsetTop;
+    playFlip(others, T.settle);
+    line.style.fontSize = '';
+    animate(line,
+      [{ transform: `translate(${dx}px,${dy}px)`, fontSize: '28px' },
+       { transform: 'none', fontSize: '20px' }],
+      { duration: T.settle, easing: 'ease-out' });
+  }
+
+  /* ───────── 플로우 ───────── */
+  function start() {
+    if (state !== 'idle') return;
+    setState('placing'); setScreen('placing');
+    animate($('#idle'), [{ opacity: 1 }, { opacity: 0 }], { duration: 250, fill: 'forwards' });
+    animate($('#split'), [{ opacity: 0 }, { opacity: 1 }], { duration: 300, delay: 120, fill: 'backwards' });
+    setNotice(H.partner,
+      `<p class="n-eyebrow">For the person across</p>
+       <p class="n-big">This side will face you.</p>`);
+    setNotice(H.me,
+      `<div class="loader"><i></i><i></i><i></i></div>
+       <p class="n-big">휴대폰을 두 사람 사이에 놓아주세요</p>
+       <p class="n-sub">위쪽 화면이 상대방을 향해 돌아가요</p>`);
+    // 위 절반 180° 회전
+    animate(H.partner.el, [{ transform: 'rotate(0deg)' }, { transform: 'rotate(180deg)' }],
+      { duration: T.placing, easing: 'cubic-bezier(.65,0,.35,1)', fill: 'forwards' });
+    at(T.placing, greeting);
+  }
+
+  function greeting() {
+    setState('greeting'); setScreen('greeting');
+    setNotice(H.partner,
+      `<p class="n-eyebrow">Live translation · 한국어 ⇄ English</p>
+       <p class="n-big">Hello! I'll translate our conversation in real time.</p>
+       <p class="n-sub">Please speak naturally.</p>`);
+    setNotice(H.me,
+      `<p class="n-eyebrow">상대방에게 인사하고 있어요</p>
+       <p class="n-mid">안녕하세요! 지금부터 대화를 실시간으로 통역해 드릴게요. 편하게 말씀하세요.</p>`);
+    at(T.greeting, conversation);
+  }
+
+  function conversation() {
+    setState('conversation'); setScreen('me');
+    setNotice(H.partner, ''); setNotice(H.me, '');
+    convStart = vt;
+    runScript();
+  }
+
+  function runScript() {
+    const rnd = mulberry32(42);
+    let prevStart = 0, prevSettled = 0;
+    SCRIPT.forEach((u) => {
+      const begin = u.overlap != null ? prevStart + u.overlap : prevSettled + u.gap;
+      const srcW = u.src.split(' '), dstW = u.dst.split(' ');
+      const st = [begin];
+      for (let i = 1; i < srcW.length; i++) st.push(st[i - 1] + T.wordMin + Math.round(rnd() * (T.wordMax - T.wordMin)));
+      const end = st[st.length - 1];
+      // 번역: 원문 두 번째 단어 직후 시작해 원문이 끝나기 전에 마무리
+      const d0 = st[Math.min(1, st.length - 1)] + 90, d1 = end - 120;
+      const dt = dstW.map((_, i) => dstW.length === 1 ? d0 : Math.round(d0 + (d1 - d0) * i / (dstW.length - 1)));
+      scheduleUtterance(u, srcW, dstW, st, dt, end);
+      prevStart = begin;
+      prevSettled = Math.max(prevSettled, end + T.silence);
+    });
+  }
+
+  function scheduleUtterance(u, srcW, dstW, st, dt, end) {
+    const other = u.who === 'me' ? 'partner' : 'me';
+    const rec = { who: u.who, src: [], dst: [], srcN: srcW.length, dstN: dstW.length };
+    let srcLine = null, dstLine = null;
+
+    at(st[0], () => {
+      transcript.push(rec);
+      setScreen(u.screen);
+      setGlow(u.who, true);
+      srcLine = newLine(H[u.who], 'self');
+    });
+    srcW.forEach((w, i) => at(st[i], () => {
+      addWord(H[u.who], srcLine, w);
+      rec.src.push(w);
+      if (i >= 2) confirm(srcLine, i - 2);
+    }));
+    dstW.forEach((w, i) => at(dt[i], () => {
+      if (!dstLine) dstLine = newLine(H[other], 'other');
+      addWord(H[other], dstLine, w);
+      rec.dst.push(w);
+      if (i >= 2) confirm(dstLine, i - 2);
+    }));
+    at(end + T.glowTail, () => setGlow(u.who, false));
+    at(end + T.confirmTail, () => { confirmAll(srcLine); confirmAll(dstLine); });
+    at(end + T.silence, () => { settle(H[u.who], srcLine); settle(H[other], dstLine); });
+  }
+
+  function endConversation() {
+    if (state !== 'conversation') return;
+    queue = [];
+    setGlow('me', false); setGlow('partner', false);
+    buildSummary();
+    setState('ended'); setScreen('ended');
+    animate($('#ended'), [{ opacity: 0, transform: 'translateY(12px)' }, { opacity: 1, transform: 'none' }], { duration: 350, easing: 'ease-out' });
+  }
+
+  function buildSummary() {
+    const secs = Math.round((vt - convStart) / 1000);
+    $('#st-time').textContent = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
+    const spoken = transcript.filter((r) => r.src.length);
+    $('#st-me').textContent = spoken.filter((r) => r.who === 'me').length;
+    $('#st-partner').textContent = spoken.filter((r) => r.who === 'partner').length;
+    const list = $('#ended-list');
+    list.innerHTML = '';
+    if (!spoken.length) {
+      list.innerHTML = '<p class="empty">기록된 대화가 없어요.</p>';
+      return;
+    }
+    spoken.forEach((r) => {
+      const m = document.createElement('div');
+      m.className = 'msg ' + r.who;
+      const cut = (arr, n) => arr.join(' ') + (arr.length < n ? ' …' : '');
+      m.innerHTML = `<p class="who">${r.who === 'me' ? '나 · 한국어' : '상대방 · English'}</p><p class="src"></p><p class="dst"></p>`;
+      m.querySelector('.src').textContent = cut(r.src, r.srcN);
+      m.querySelector('.dst').textContent = r.dst.length ? cut(r.dst, r.dstN) : '…';
+      list.append(m);
+    });
+  }
+
+  function reset() {
+    queue = [];
+    phone.getAnimations({ subtree: true }).forEach((a) => a.cancel());
+    Object.values(H).forEach((h) => {
+      h.live.innerHTML = ''; h.history.innerHTML = ''; h.notice.innerHTML = '';
+      h.el.classList.remove('has-content', 'speaking');
+    });
+    glow.me.classList.remove('on'); glow.partner.classList.remove('on');
+    $('#ended-list').innerHTML = '';
+    transcript = [];
+    vt = 0;
+    setPaused(false);
+    setState('idle'); setScreen('idle');
+  }
+
+  /* ───────── 이벤트 ───────── */
+  $('#btn-start').addEventListener('click', start);
+  $('#btn-end').addEventListener('click', endConversation);
+  $('#btn-again').addEventListener('click', reset);
+  $('#btn-restart').addEventListener('click', reset);
+  $('#btn-pause').addEventListener('click', () => setPaused(!paused));
+  document.querySelectorAll('.seg button').forEach((b) => b.addEventListener('click', () => setSpeed(+b.dataset.speed)));
+
+  function fit() {
+    const s = Math.min(1, (innerHeight - 110) / 852, (innerWidth - 40) / 393);
+    document.documentElement.style.setProperty('--scale', Math.max(.4, s));
+  }
+  addEventListener('resize', fit);
+  fit();
+  setScreen('idle');
+})();
+</script>
+</body>
+</html>
